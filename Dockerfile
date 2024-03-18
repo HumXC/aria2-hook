@@ -18,7 +18,7 @@ RUN go test -v ./...
 FROM alpine:3.14 AS build-release-stage
 
 WORKDIR /
-
+RUN apk update && apk upgrade && apk add curl
 COPY --from=build-stage /app/aria2-hook /aria2-hook
 
 ENTRYPOINT ["/aria2-hook"]
