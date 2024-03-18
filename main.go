@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"math/big"
 	"os"
@@ -74,7 +76,7 @@ func MakeListener(eventName string, client *arigo.Client, cmd []string) arigo.Ev
 	return func(event *arigo.DownloadEvent) {
 		s, err := GetStatus(client, event.GID)
 		if err != nil {
-			log.Printf("Failed to get '%s' event status, GID:%s", eventName, event.GID)
+			log.Printf("Failed to get '%s' event status, GID:%s :%s", eventName, event.GID, err)
 			return
 		}
 		log.Println(eventName, "Event:", s)
@@ -121,7 +123,14 @@ func main() {
 	cfgEnv, err := config.FromEnv()
 	checkErr(err)
 	var cfgFile config.Config
-	if configFile != "" {
+	if configFile == "" {
+		defaultConfigFile := "./config.yaml"
+		_, err := os.Stat(defaultConfigFile)
+		if !errors.Is(err, fs.ErrNotExist) {
+			cfgFile, err = config.FromFile(defaultConfigFile)
+			checkErr(err)
+		}
+	} else {
 		cfgFile, err = config.FromFile(configFile)
 		checkErr(err)
 	}
@@ -150,6 +159,7 @@ func Run(config config.Config) error {
 	for event, listener := range events {
 		_ = c.Subscribe(event, listener(c, config))
 	}
+	log.Printf("Client connected to %s\n", config.Url)
 	return c.Run()
 }
 
