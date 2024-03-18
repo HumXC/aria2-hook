@@ -33,12 +33,12 @@ func (s Status) String() string {
 
 func (s Status) ParseArgs(cmd string) (result string) {
 	m := map[string]string{
-		"${ErrCode}":         s.ErrCode,
-		"${ErrMsg}":          s.ErrMsg,
-		"${Name}":            s.Name,
-		"${TotalLength}":     s.TotalLength,
-		"${CompletedLength}": s.CompletedLength,
-		"${GID}":             s.GID,
+		"{{ErrCode}}":         s.ErrCode,
+		"{{ErrMsg}}":          s.ErrMsg,
+		"{{Name}}":            s.Name,
+		"{{TotalLength}}":     s.TotalLength,
+		"{{CompletedLength}}": s.CompletedLength,
+		"{{GID}}":             s.GID,
 	}
 	result = cmd
 	for k, v := range m {
@@ -48,20 +48,23 @@ func (s Status) ParseArgs(cmd string) (result string) {
 }
 
 func (s Status) CallCommand(cmds []string) {
-	for _, cmd := range cmds {
-		if strings.HasPrefix(cmd, "ASYNC:") {
-			go func(c string) {
-				err := exec.Command("sh", "-c", s.ParseArgs(c)).Run()
-				if err != nil {
-					log.Println("Error on Command:", c, err)
-				}
-			}(strings.Trim(cmd, "ASYNC:"))
-		} else {
-			err := exec.Command("sh", "-c", s.ParseArgs(cmd)).Run()
-			if err != nil {
-				log.Println("Error on Command:", cmd, err)
-			}
+	run := func(command string) {
+		out, err := exec.Command("sh", "-c", command).Output()
+		if err != nil {
+			log.Println("Error on Command:", string(out), err)
 		}
+	}
+	for _, cmd := range cmds {
+		s.SCallCommand(run, cmd)
+	}
+}
+
+func (s Status) SCallCommand(run func(string), cmd string) {
+	asyncFlag := "ASYNC:"
+	if strings.HasPrefix(cmd, asyncFlag) {
+		go run(s.ParseArgs(strings.TrimPrefix(cmd, asyncFlag)))
+	} else {
+		run(s.ParseArgs(cmd))
 	}
 }
 
