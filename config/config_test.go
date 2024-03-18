@@ -81,10 +81,10 @@ func TestSFromCmd(t *testing.T) {
 	}
 	args := []string{
 		"aria2-hook-test",
-		"--url", "https://domain:6800/jsonrpc",
-		"--token", "5k5kDSWKJ%^$!@[]",
-		"--on-download-start", "ASYNC:touch ${Name}#",
-		"--on-download-pause", "#echo hi",
+		"-url", "https://domain:6800/jsonrpc",
+		"-token", "5k5kDSWKJ%^$!@[]",
+		"-on-download-start", "ASYNC:touch ${Name}#",
+		"-on-download-pause", "#echo hi",
 	}
 	cmd := flag.NewFlagSet(args[0], flag.ExitOnError)
 	got, err := SFromCmd(cmd, args)
@@ -104,11 +104,14 @@ func TestMerge(t *testing.T) {
 	c3 := Config{
 		Url: "-url3",
 	}
+	c4 := Config{
+		Url: "",
+	}
 	want := Config{
 		Url:             "-url3",
 		OnDownloadStart: []string{"a", "b"},
 		OnDownloadStop:  []string{"stop"},
 	}
-	got := Merge(c1, c2, c3)
+	got := Merge(c1, c2, c3, c4)
 	assert.Equal(t, want, got)
 }

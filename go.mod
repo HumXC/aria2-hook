@@ -1,4 +1,4 @@
-module aria2-hook
+module github.com/HumXC/aria2-hook
 
 go 1.21.7
 

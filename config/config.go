@@ -40,6 +40,11 @@ func Merge(cfg ...Config) Config {
 				v1.Field(i).Set(reflect.AppendSlice(v1.Field(i), v2.Field(i)))
 				continue
 			}
+			if v2.Field(i).Kind() == reflect.String {
+				if v2.Field(i).String() == "" {
+					continue
+				}
+			}
 			v1.Field(i).Set(v2.Field(i))
 		}
 		return c1
@@ -89,8 +94,8 @@ func FromCmd(cmd *flag.FlagSet) (Config, error) {
 
 func SFromCmd(cmd *flag.FlagSet, args []string) (Config, error) {
 	c := Config{}
-	cmd.StringVar(&c.Url, "url", "", "websocket url")
-	cmd.StringVar(&c.Token, "token", "", "token")
+	cmd.StringVar(&c.Url, "url", "", "aria2 jsonrpc url")
+	cmd.StringVar(&c.Token, "token", "", "aria2 jsonrpc token")
 	cmd.BoolVar(&c.Debug, "debug", false, "debug mode")
 	OnDownloadStart := ""
 	OnDownloadPause := ""

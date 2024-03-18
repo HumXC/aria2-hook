@@ -1,7 +1,6 @@
 package main
 
 import (
-	"aria2-hook/config"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/HumXC/aria2-hook/config"
 
 	"github.com/HumXC/arigo"
 	"github.com/cenkalti/rpc2"
@@ -105,7 +106,7 @@ func main() {
 	var err error
 	checkErr := func(err error) {
 		if err != nil {
-			log.Fatalf("Failed to load config file, %s \n", err)
+			log.Fatalf("Failed to load config, %s\n", err)
 		}
 	}
 
