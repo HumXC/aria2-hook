@@ -1,43 +1,131 @@
 # aria2-hoook
 
-简单地配置 aria2 的 hook，在触发事件后运行一些命令。
+aria2-hook provides a simple way to add invocation for aria2's download event.
 
-## 配置示例
+## Configuration
 
-程序默认读取 `./config.yaml`
+The structure of the configuration can be referenced from this file: [config.go](https://github.com/HumXC/aria2-hook/blob/main/config/config.go#L15).
+
+aria2-hook has three ways for reading configuration:
+
+-   `Command line options`
+-   `Environment variables`
+-   `Configuration files`
+
+If multiple configuration methods are used simultaneously, the final configuration will be overridden according to the priority order:
+
+[ `Command line options` > `Environment variables` > `Configuration files` ].
+
+### Command line options
+
+Run `aria2-hook --help`
+
+### Environment variables
+
+As simple as this:
+
+```bash
+URL="https://domain.example:6800/jsonrpc" \
+TOKEN="your_token" \
+ON_DOWNLOAD_START="touch ${Name}.Start" \ # <- This command actually serves no real purpose; it's only used for testing.
+aria2-hook
+```
+
+### Configuration files
 
 ```yaml
 url: "https://domain.example:6800/jsonrpc"
 token: "your_token"
 
 onDownloadStart:
-    - "touch ${Name}"
-    - "send-notification.sh ${Name} ${TotalLength} ${CompletedLength}"
+    - "touch {{Name}}"
+    - "send-notification.sh {{Name}} {{TotalLength}} {{CompletedLength}}"
 onDownloadPause:
-    # 异步执行
+    # async
     - "ASYNC: sleep 10"
     - "sleep 10"
 onDownloadStop:
 onDownloadComplete:
 onDownloadError:
-    - "send-notification.sh ${Name} ${ErrCode} ${ErrMsg}"
+    - "send-notification.sh {{Name}} {{ErrCode}} {{ErrMsg}}"
 onBtDownloadComplete:
 ```
 
-使用 yaml 进行配置，onDownloadPause, onDownloadStop 等是事件名称，值是字符串列表。每个元素为一条命令，会在触发对应事件后使用 sh 解释和执行配置命令列表。
+### Multi-line command
 
-### 异步执行
+When configuring using both command line and environment variables, if you need to execute multiple commands within one event, you need to separate multiple commands with '#' symbol. As an example of configuring with environment variables:
 
-默认情况下命令会阻塞地执行每一条命令，直到所有命令执行完成。在命令前加上 `ASYNC:` 前缀，命令将异步地运行。
+The ON_DOWNLOAD_START is interpreted as a string list within the program. In the environment variables, '#' is used as a delimiter, for example:
 
-### 占位符
+`ON_DOWNLOAD_START="touch ${Name}.Start#echo ${Name}.Start#"`
 
-在命令中可以使用占位符来引用下载任务的相关信息。
-| 占位符 | 说明 |
+`ON_DOWNLOAD_START` is actually interpreted as three commands:
+
+Split(ON_DOWNLOAD_START, "#")
+
+-   `"touch ${Name}.Start"`
+-   `"echo ${Name}.Start"`
+-   `""` (empty string)
+
+## Async
+
+If a command starts with the `ASYNC:` keyword, it will be called asynchronously. If the `ASYNC:` keyword is not used, all commands under an event will be called in a blocking manner. If the previous command has not finished, the next command will not be called.
+
+## Placeholders
+
+You can use placeholders in the command to reference information related to the download task.
+| Placeholder | Description |
 | --- | --- |
-｜`${Gid}` | 下载任务的 GID |
-｜`${Name}` | 下载任务的文件名 |
-｜`${TotalLength}` | 下载任务的总大小 |
-｜`${CompletedLength}` | 下载任务已经下载的大小 |
-｜`${ErrCode}` | 下载任务的错误码 (如果有) |
-｜`${ErrMsg}` | 下载任务的错误信息 (如果有) |
+| `{{Gid}}` | GID of the download task |
+| `{{Name}}` | Filename of the download task |
+| `{{TotalLength}}` | Total size of the download task |
+| `{{CompletedLength}}` | Size already downloaded for the task |
+| `{{ErrCode}}` | Error code of the download task (if any) |
+| `{{ErrMsg}}` | Error message of the download task (if any) |
+
+## Use docker
+
+I use aria2-hook to set up message sending with [ntfy.sh](https://ntfy.sh). When a download event occurs, I receive messages from ntfy.
+
+```yaml
+version: "3.8"
+services:
+    aria2-hook:
+        image: humxc/aria2-hook
+        container_name: aria2-hook
+        restart: always
+        environment:
+            TZ: ${TZ}
+            TOKEN: ${ARIA2_RPC_SECRET}
+            URL: http://aria2:6800/jsonrpc
+            ON_DOWNLOAD_START: >
+                curl
+                -H "Title: Aria2 download start"
+                -d "{{Name}} - {{CompletedLength}}/{{TotalLength}}"
+                ${NTFY_URL}
+            ON_DOWNLOAD_STOP: >
+                curl
+                -H "Title: Aria2 download stop"
+                -d "{{Name}} - {{CompletedLength}}/{{TotalLength}}"
+                ${NTFY_URL}
+            ON_DOWNLOAD_PAUSE: >
+                curl
+                -H "Title: Aria2 download pause"
+                -d "{{Name}} - {{CompletedLength}}/{{TotalLength}}"
+                ${NTFY_URL}
+            ON_DOWNLOAD_COMPLETE: >
+                curl
+                -H "Title: Aria2 download complete"
+                -d "{{Name}} - {{CompletedLength}}"
+                ${NTFY_URL}
+            ON_BT_DOWNLOAD_COMPLETE: >
+                curl
+                -H "Title: Aria2 download complete"
+                -d "{{Name}} - {{CompletedLength}}"
+                ${NTFY_URL}
+            ON_DOWNLOAD_ERROR: >
+                curl
+                -H "Title: Aria2 download error"
+                -d "{{Name}}: {{ErrMsg}}"
+                ${NTFY_URL}
+```
