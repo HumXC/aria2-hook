@@ -1,12 +1,11 @@
-name: docker-build-latest
+name: docker-build-release
 
 on:
     push:
-        branches:
-            - "main"
-
+        tags:
+            - "v*.*.*"
 jobs:
-    docker-build-and-push-latest:
+    build-and-push-release:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
@@ -23,4 +22,4 @@ jobs:
               with:
                   context: .
                   push: true
-                  tags: ${{ secrets.DOCKERHUB_USERNAME }}/aria2-hook:latest
+                  tags: ${{ secrets.DOCKERHUB_USERNAME }}/aria2-hook:${{ github.ref_name }}
