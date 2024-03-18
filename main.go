@@ -1,8 +1,12 @@
 package main
 
 import (
+	"aria2-hook/config"
+	"flag"
 	"fmt"
+	"log"
 	"math/big"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -26,7 +30,7 @@ func (s Status) String() string {
 	return fmt.Sprintf("Name:%s,TotalLength:%s,CompletedLength:%s", s.Name, s.TotalLength, s.CompletedLength)
 }
 
-func (s Status) ConvertTo(cmd string) (result string) {
+func (s Status) ParseArgs(cmd string) (result string) {
 	m := map[string]string{
 		"${ErrCode}":         s.ErrCode,
 		"${ErrMsg}":          s.ErrMsg,
@@ -41,83 +45,110 @@ func (s Status) ConvertTo(cmd string) (result string) {
 	}
 	return
 }
-func CallCommand(cmds []string, status Status) {
+
+func (s Status) CallCommand(cmds []string) {
 	for _, cmd := range cmds {
 		if strings.HasPrefix(cmd, "ASYNC:") {
 			go func(c string) {
-				err := exec.Command("sh", "-c", status.ConvertTo(c)).Run()
+				err := exec.Command("sh", "-c", s.ParseArgs(c)).Run()
 				if err != nil {
-					fmt.Println("Error on Command:", c, err)
+					log.Println("Error on Command:", c, err)
 				}
 			}(strings.Trim(cmd, "ASYNC:"))
 		} else {
-			err := exec.Command("sh", "-c", status.ConvertTo(cmd)).Run()
+			err := exec.Command("sh", "-c", s.ParseArgs(cmd)).Run()
 			if err != nil {
-				fmt.Println("Error on Command:", cmd, err)
+				log.Println("Error on Command:", cmd, err)
 			}
 		}
 	}
 }
 
-type listenerF func(client *arigo.Client, config Config) arigo.EventListener
+type listener func(client *arigo.Client, config config.Config) arigo.EventListener
 
-func gen(eventName string, client *arigo.Client, cmd []string) arigo.EventListener {
+func MakeListener(eventName string, client *arigo.Client, cmd []string) arigo.EventListener {
 	return func(event *arigo.DownloadEvent) {
 		s, err := GetStatus(client, event.GID)
 		if err != nil {
-			panic(err)
+			log.Printf("Failed to get '%s' event status, GID:%s", eventName, event.GID)
+			return
 		}
-		fmt.Println(eventName, "Event:", s)
-		CallCommand(cmd, s)
+		log.Println(eventName, "Event:", s)
+		s.CallCommand(cmd)
 	}
 }
 
-var events = map[arigo.EventType]listenerF{
-	arigo.StartEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("Start", client, config.OnDownloadStart)
+var events = map[arigo.EventType]listener{
+	arigo.StartEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("Start", client, config.OnDownloadStart)
 	},
-	arigo.PauseEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("Pause", client, config.OnDownloadPause)
+	arigo.PauseEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("Pause", client, config.OnDownloadPause)
 	},
-	arigo.StopEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("Stop", client, config.OnDownloadStop)
+	arigo.StopEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("Stop", client, config.OnDownloadStop)
 	},
-	arigo.CompleteEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("DownloadComplete", client, config.OnDownloadComplete)
+	arigo.CompleteEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("DownloadComplete", client, config.OnDownloadComplete)
 	},
-	arigo.BTCompleteEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("BTDownloadComplete", client, config.OnBtDownloadComplete)
+	arigo.BTCompleteEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("BTDownloadComplete", client, config.OnBtDownloadComplete)
 	},
-	arigo.ErrorEvent: func(client *arigo.Client, config Config) arigo.EventListener {
-		return gen("Error", client, config.OnDownloadError)
+	arigo.ErrorEvent: func(client *arigo.Client, config config.Config) arigo.EventListener {
+		return MakeListener("Error", client, config.OnDownloadError)
 	},
 }
 
 func main() {
-	rpc2.DebugLog = true
-	config, err := ParseConfigFile("config.yaml")
-	if err != nil {
-		panic(err)
+	// CommandLine > Environment > ConfigFile
+	var cfg config.Config
+	var err error
+	checkErr := func(err error) {
+		if err != nil {
+			log.Fatalf("Failed to load config file, %s \n", err)
+		}
 	}
+
+	configFile := ""
+	cmd := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	cmd.StringVar(&configFile, "config", "", "config file")
+	cfgCmd, err := config.FromCmd(cmd)
+	checkErr(err)
+	cfgEnv, err := config.FromEnv()
+	checkErr(err)
+	var cfgFile config.Config
+	if configFile != "" {
+		cfgFile, err = config.FromFile(configFile)
+		checkErr(err)
+	}
+	cfg = config.Merge(cfgCmd, cfgEnv, cfgFile)
+	checkErr(config.Verify(cfg))
+	rpc2.DebugLog = cfg.Debug
+
 	for {
-		if err := Run(config); err != nil {
-			fmt.Println("Client has error:", err, ",reconnect after 10s")
+		if err := Run(cfg); err != nil {
+			log.Println("Client has error:", err, ",reconnect after 10s")
 			time.Sleep(10 * time.Second)
 		}
-		fmt.Println("Client was closed, reconnecting.")
+		log.Println("Client was closed, reconnecting.")
 	}
 }
-func Run(config Config) error {
-	c, err := arigo.Dial(config.Url, config.Token)
+
+func Run(config config.Config) error {
+	url := config.Url
+	if strings.HasPrefix(url, "http") {
+		url = strings.Replace(config.Url, "http", "ws", 1)
+	}
+	c, err := arigo.Dial(url, config.Token)
 	if err != nil {
 		return err
 	}
 	for event, listener := range events {
-		c.Subscribe(event, listener(c, config))
+		_ = c.Subscribe(event, listener(c, config))
 	}
-	c.Run()
-	return nil
+	return c.Run()
 }
+
 func GetTaskName(status arigo.Status) string {
 	taskName := "Unknow"
 	switch {
