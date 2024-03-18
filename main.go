@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -51,9 +52,12 @@ func (s Status) ParseArgs(cmd string) (result string) {
 
 func (s Status) CallCommand(cmds []string) {
 	run := func(command string) {
-		out, err := exec.Command("sh", "-c", command).Output()
+		stderr := bytes.Buffer{}
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
 		if err != nil {
-			log.Println("Error on Command:", string(out), err)
+			log.Println("Error on Command:", command, string(out), stderr.String(), err)
 		}
 	}
 	for _, cmd := range cmds {
